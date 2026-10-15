@@ -28,6 +28,16 @@ def dummy_rebuild_tensor_v2(
             dtype = "I32"
         elif storage.name == "LongStorage":
             dtype = "I64"
+        elif storage.name == "DoubleStorage":
+            dtype = "F64"
+        elif storage.name == "ShortStorage":
+            dtype = "I16"
+        elif storage.name == "CharStorage":
+            dtype = "I8"
+        elif storage.name == "ByteStorage":
+            dtype = "U8"
+        elif storage.name == "BoolStorage":
+            dtype = "BOOL"
     return {"shape": list(size), "dtype": dtype}
 
 
@@ -46,8 +56,26 @@ class RestrictedUnpickler(pickle.Unpickler):
             "BFloat16Storage",
             "IntStorage",
             "LongStorage",
+            "DoubleStorage",
+            "ShortStorage",
+            "CharStorage",
+            "ByteStorage",
+            "BoolStorage",
         },
     }
+
+    def persistent_load(self, saved_id: Any) -> DummyStorage:
+        # ZIP checkpoints refer to tensor storage via a five-element ID.
+        # Only reconstruct metadata using our existing dummy allowlist; never
+        # load storage bytes, import torch, or invoke a pickle-provided callable.
+        if not isinstance(saved_id, tuple) or len(saved_id) != 5:
+            raise pickle.UnpicklingError("Invalid storage persistent ID")
+        kind, storage_type, _, _, _ = saved_id
+        if (kind != "storage" or not isinstance(storage_type, type)
+                or not issubclass(storage_type, DummyStorage)
+                or storage_type is DummyStorage):
+            raise pickle.UnpicklingError("Unsupported storage persistent ID")
+        return storage_type()
 
     def find_class(self, module: str, name: str) -> Any:
         if module in self.ALLOWED_MODULES and name in self.ALLOWED_MODULES[module]:
@@ -84,6 +112,11 @@ def parse_pytorch_header(path: str) -> Dict[str, Any]:
             data = unpickler.load()
             
     if isinstance(data, dict):
+        for key in ("state_dict", "model_state_dict"):
+            candidate = data.get(key)
+            if isinstance(candidate, dict) and "shape" not in candidate:
+                data = candidate
+                break
         for k, v in data.items():
             if isinstance(v, dict) and "shape" in v:
                 tensors[k] = v

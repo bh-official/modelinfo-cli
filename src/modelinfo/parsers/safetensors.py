@@ -66,9 +66,12 @@ def parse_safetensors_header(path: str) -> dict[str, Any]:
             total_size += os.path.getsize(shard_path)
         try:
             shard_header = _read_single_header(shard_path)
-            for k, v in shard_header.items():
-                if k != "__metadata__":
-                    tensors[k] = v
+            for name, assigned_shard in weight_map.items():
+                if assigned_shard != shard:
+                    continue
+                if name not in shard_header:
+                    raise ValueError(f"Indexed tensor {name!r} is missing from shard {shard!r}")
+                tensors[name] = shard_header[name]
         except FileNotFoundError:
             missing_shards += 1
             
