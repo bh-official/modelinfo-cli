@@ -238,6 +238,8 @@ def test_detect_local_gpu_falls_back_to_apple_unified_memory(monkeypatch):
     def fake_run(command, **kwargs):
         if command[0] in {"nvidia-smi", "rocm-smi", "xpu-smi"}:
             raise FileNotFoundError(command[0])
+        if command == ["sysctl", "-n", "hw.optional.arm64"]:
+            return completed("1\n")
         assert command == ["sysctl", "hw.memsize"]
         return completed("hw.memsize: 17179869184\n")
 

@@ -1,3 +1,4 @@
+import math
 import re
 import subprocess
 from typing import Optional, Tuple
@@ -209,9 +210,8 @@ def _detect_amd_gpu() -> Optional[Tuple[str, float, int]]:
             total_bytes = 0
             gpu_count = len(lines)
             for line in lines:
-                parts = line.split(":")
-                if len(parts) >= 2:
-                    total_bytes += int(parts[1].strip())
+                # Device prefixes contain a colon too (GPU[0] : VRAM ...).
+                total_bytes += int(line.rsplit(":", 1)[1].strip())
             display_name = (
                 f"AMD Multi-GPU ({gpu_count}x)" if gpu_count > 1 else "AMD GPU"
             )
@@ -222,18 +222,20 @@ def _detect_amd_gpu() -> Optional[Tuple[str, float, int]]:
 
 
 def _parse_intel_vram(size_str: str) -> Optional[float]:
-    match = re.search(r"([\d\.]+)\s*([a-zA-Z]*)", size_str)
+    match = re.fullmatch(r"\s*(\d+(?:\.\d*)?|\.\d+)\s*([a-zA-Z]*)\s*", size_str)
     if not match:
         return None
     val = float(match.group(1))
-    unit = match.group(2).lower()
-    if unit in ("gib", "gb"):
-        val *= 1024.0
-    elif unit in ("kib", "kb"):
-        val /= 1024.0
-    elif unit == "b":
-        val /= (1024.0 * 1024.0)
-    return val
+    factors = {"": 1.0, "mib": 1.0, "mb": 1.0,
+               "gib": 1024.0, "gb": 1024.0,
+               "tib": 1024.0**2, "tb": 1024.0**2,
+               "kib": 1 / 1024.0, "kb": 1 / 1024.0,
+               "b": 1 / 1024.0**2}
+    factor = factors.get(match.group(2).lower())
+    if factor is None or not math.isfinite(val) or val <= 0:
+        return None
+    result = val * factor
+    return result if math.isfinite(result) else None
 
 
 def _parse_xpu_smi_output(stdout: str) -> Tuple[list[str], float, int]:
@@ -283,6 +285,12 @@ def _detect_intel_gpu() -> Optional[Tuple[str, float, int]]:
 
 def _detect_apple_gpu() -> Optional[Tuple[str, float, int]]:
     try:
+        architecture = subprocess.run(
+            ["sysctl", "-n", "hw.optional.arm64"],
+            capture_output=True, text=True, check=True, timeout=2.0,
+        )
+        if architecture.stdout.strip() != "1":
+            return None
         result = subprocess.run(
             ["sysctl", "hw.memsize"],
             capture_output=True,
@@ -341,6 +349,8 @@ def resolve_gpu(target: str) -> Tuple[str, float, int]:
     match = re.match(r"^(\d+)x\s*(.+)$", lower_target)
     if match:
         gpu_count = int(match.group(1))
+        if gpu_count < 1:
+            raise ValueError("GPU count must be at least 1.")
         target_name = match.group(2)
     else:
         target_name = target
@@ -352,13 +362,16 @@ def resolve_gpu(target: str) -> Tuple[str, float, int]:
         display_name = f"{gpu_count}x {target_name}" if gpu_count > 1 else target_name
         return display_name, vram_gb, gpu_count
 
-    # If the user passed a pure number, assume GB
+    # Parse numeric capacity before normalization can remove a minus sign.
     try:
-        vram_gb = float(normalized) * gpu_count
-        display_name = f"Custom ({vram_gb} GB)"
-        return display_name, vram_gb, gpu_count
+        vram_gb = float(target_name.strip()) * gpu_count
     except ValueError:
         pass
+    else:
+        if not math.isfinite(vram_gb) or vram_gb <= 0:
+            raise ValueError("GPU VRAM must be a finite number greater than 0.")
+        display_name = f"Custom ({vram_gb} GB)"
+        return display_name, vram_gb, gpu_count
 
     import difflib
 
