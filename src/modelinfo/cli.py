@@ -49,6 +49,27 @@ def _positive_float(value: str) -> float:
     return fvalue
 
 
+def _positive_context(value: str) -> int:
+    result = int(value)
+    if result <= 0:
+        raise argparse.ArgumentTypeError("context must be greater than 0")
+    return result
+
+
+def _positive_vram(value: str) -> float:
+    result = float(value)
+    if not math.isfinite(result) or result <= 0:
+        raise argparse.ArgumentTypeError("VRAM must be a finite number greater than 0")
+    return result
+
+
+def _gpu_utilization(value: str) -> float:
+    result = float(value)
+    if not math.isfinite(result) or not 0 < result <= 1:
+        raise argparse.ArgumentTypeError("GPU utilization must be greater than 0 and at most 1")
+    return result
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="modelinfo",
@@ -63,7 +84,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--context",
-        type=int,
+        type=_positive_context,
         default=None,
         help="Context length for dynamic KV cache footprint calculation.",
     )
@@ -75,7 +96,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--max-vram",
-        type=float,
+        type=_positive_vram,
         default=8.0,
         help="Maximum VRAM in GB for color-coding thresholds.",
     )
@@ -117,7 +138,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--gpu-util",
-        type=float,
+        type=_gpu_utilization,
         default=0.9,
         help="vLLM gpu_memory_utilization ratio (default 0.9). Reserves 10 percent for PyTorch context.",
     )
