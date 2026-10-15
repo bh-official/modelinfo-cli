@@ -19,7 +19,10 @@ def _read_single_header(path: str) -> dict[str, Any]:
         if len(json_bytes) != header_length:
             raise EOFError("Invalid SafeTensors file: Unexpected end of file while reading JSON header.")
             
-        return json.loads(json_bytes)
+        header = json.loads(json_bytes)
+        if not isinstance(header, dict):
+            raise ValueError(f"SafeTensors header in {path} must be a JSON object.")
+        return header
 
 def parse_safetensors_header(path: str) -> dict[str, Any]:
     dir_path = os.path.dirname(path)
