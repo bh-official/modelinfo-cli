@@ -198,7 +198,9 @@ def print_model_info(
             summary.add_row("", "[dim]*Note: Max capacity assumes perfect load balancing. Real capacity is bottlenecked by the most memory-constrained GPU in the array.[/dim]")
     else:
         summary.add_row("VRAM (est):", vram_display)
-        if gpu_name:
+        if gpu_name and (missing_shards > 0 or footprint["total_memory_bytes"] == 0):
+            summary.add_row("Hardware Fit:", "[yellow]Unknown (Incomplete Model Metadata)[/yellow]")
+        elif gpu_name:
             utilization = vram_bytes / (max_vram_gb * 1024**3) if max_vram_gb > 0 else 2.0
             if utilization <= gpu_util:
                 fit_text = f"[green]✓ Fits comfortably in {gpu_name} ({max_vram_gb:.1f} GB)[/green]"
