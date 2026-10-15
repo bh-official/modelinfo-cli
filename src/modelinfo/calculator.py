@@ -17,27 +17,33 @@ DTYPE_BYTES = {
     "I8": 1.0,
     "U64": 8.0,
     "U32": 4.0,
+    "U16": 2.0,
+    "U8": 1.0,
+    "BOOL": 1.0,
     "Q8_0": 1.0625,
-    "Q8_1": 1.0625,
-    "Q8_K": 1.0625,
-    "Q6_K": 0.828125,
+    "Q8_1": 1.125,
+    "Q8_K": 1.140625,
+    "Q6_K": 0.8203125,
     "Q5_0": 0.6875,
     "Q5_1": 0.75,
     "Q5_K": 0.6875,
     "Q4_0": 0.5625,
     "Q4_1": 0.625,
-    "Q4_K": 0.59375,
-    "Q3_K": 0.4375,
-    "Q2_K": 0.34375,
-    "IQ4_NL": 0.53125,
+    "Q4_K": 0.5625,
+    "Q3_K": 0.4296875,
+    "Q2_K": 0.328125,
+    "IQ4_NL": 0.5625,
     "IQ4_XS": 0.53125,
-    "IQ3_S": 0.4375,
-    "IQ3_XXS": 0.385,
-    "IQ2_S": 0.3125,
-    "IQ2_XS": 0.296875,
-    "IQ2_XXS": 0.28125,
+    "IQ3_S": 0.4296875,
+    "IQ3_XXS": 0.3828125,
+    "IQ2_S": 0.3203125,
+    "IQ2_XS": 0.2890625,
+    "IQ2_XXS": 0.2578125,
     "IQ1_M": 0.21875,
     "IQ1_S": 0.1953125,
+    "TQ1_0": 54 / 256,
+    "TQ2_0": 66 / 256,
+    "MXFP4": 17 / 32,
     "Q8": 1.06,
     "Q6": 0.82,
     "Q5": 0.68,
@@ -73,19 +79,30 @@ def calculate_footprint(
     
     if is_lazy:
         base_memory_bytes = tensors.get("__metadata__", {}).get("total_size", 0.0)
-        # Assume predominantly FP16/BF16 for modern Hub architectures
-        primary_dtype = "BF16"
+        # Lazy mode estimates parameter count from the configured weight dtype.
+        # Retain the BF16 fallback when no recognized dtype is available.
+        dtype_config = config or {}
+        if isinstance(dtype_config.get("text_config"), dict):
+            dtype_config = dtype_config["text_config"]
+        configured_dtype = dtype_config.get("dtype") or dtype_config.get("torch_dtype")
+        primary_dtype = {
+            "float64": "F64", "float32": "F32", "float16": "F16",
+            "bfloat16": "BF16",
+        }.get(str(configured_dtype).lower(), "BF16")
         dtype_counts[primary_dtype] = 1
-        total_params = int(base_memory_bytes / 2.0)
+        total_params = int(base_memory_bytes / _get_bytes_per_param(primary_dtype))
     else:
         for name, metadata in tensors.items():
             if name == "__metadata__":
                 continue
                 
-            shape = metadata.get("shape", [])
-            if not shape:
+            shape = metadata.get("shape")
+            if shape is None:
                 continue
-                
+            if (not isinstance(shape, (list, tuple))
+                    or any(type(dimension) is not int or dimension < 0 for dimension in shape)):
+                raise ValueError(f"Invalid tensor shape for {name!r}: expected nonnegative integer dimensions")
+
             param_count = math.prod(shape)
             total_params += param_count
             

@@ -115,8 +115,8 @@ def test_framework_overhead_included():
 def test_explicit_gguf_quantization_byte_multipliers():
     """Verify that explicit ggml_type enums are exactly mapped."""
     assert _get_bytes_per_param("Q8_0") == 1.0625
-    assert _get_bytes_per_param("Q4_K") == 0.59375
-    assert _get_bytes_per_param("IQ2_XXS") == 0.28125
+    assert _get_bytes_per_param("Q4_K") == 144 / 256
+    assert _get_bytes_per_param("IQ2_XXS") == 66 / 256
     assert _get_bytes_per_param("F8_E5M2") == 1.0
 
 def test_topology_penalties():

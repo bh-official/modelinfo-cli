@@ -17,7 +17,8 @@ def extract_architecture(tensors: Dict[str, Any], config: Dict[str, Any] = None)
     if gen_arch:
         arch_str = str(gen_arch)
         num_layers = metadata.get(f"{arch_str}.block_count", 0)
-        kv_heads = metadata.get(f"{arch_str}.attention.head_count_kv", 0)
+        kv_heads = metadata.get(f"{arch_str}.attention.head_count_kv",
+                                metadata.get(f"{arch_str}.attention.head_count", 0))
 
         key_length = metadata.get(f"{arch_str}.attention.key_length")
         if not key_length:
@@ -35,13 +36,16 @@ def extract_architecture(tensors: Dict[str, Any], config: Dict[str, Any] = None)
 
     # 2. Attempt explicit SafeTensors config.json
     if config:
-        num_layers = config.get("num_hidden_layers", 0)
-        num_attention_heads = config.get("num_attention_heads", 1)
+        # Multimodal models keep the decoder dimensions in text_config.
+        if isinstance(config.get("text_config"), dict):
+            config = config["text_config"]
+        num_layers = config.get("num_hidden_layers", config.get("n_layer", 0))
+        num_attention_heads = config.get("num_attention_heads", config.get("n_head", 1))
         num_key_value_heads = config.get("num_key_value_heads", num_attention_heads)
-        hidden_size = config.get("hidden_size", 0)
+        hidden_size = config.get("hidden_size", config.get("n_embd", 0))
 
         if num_attention_heads > 0:
-            head_dim = hidden_size // num_attention_heads
+            head_dim = config.get("head_dim") or hidden_size // num_attention_heads
             kv_dim = num_key_value_heads * head_dim
             if num_layers > 0 and kv_dim > 0:
                 return num_layers, kv_dim, False
@@ -65,18 +69,22 @@ def extract_architecture(tensors: Dict[str, Any], config: Dict[str, Any] = None)
             if len(parts) > idx + 1 and parts[idx+1].isdigit():
                 layers_set.add(int(parts[idx+1]))
 
-        if name.endswith("k_proj.weight") or name.endswith("attn.k.weight") or name.endswith("k_proj.w"):
+        if is_gguf and len(parts) > 1 and parts[0] == "blk" and parts[1].isdigit():
+            layers_set.add(int(parts[1]))
+
+        if (is_gguf and name.endswith("attn_k.weight")) or name.endswith("k_proj.weight") or name.endswith("attn.k.weight") or name.endswith("k_proj.w"):
             found_k_proj = True
             shape = meta.get("shape", [])
             if len(shape) >= 2:
                 kv_dim = shape[-1] if is_gguf else shape[0]
 
-        if "qkv_proj.weight" in name or "c_attn.weight" in name:
+        if "qkv_proj.weight" in name or "c_attn.weight" in name or (is_gguf and name.endswith("attn_qkv.weight")):
             found_fused = True
             if not found_k_proj:
                 shape = meta.get("shape", [])
                 if len(shape) >= 2:
-                    kv_dim = (shape[-1] if is_gguf else shape[0]) // 3
+                    output_dim = shape[-1] if is_gguf or name.endswith("c_attn.weight") else shape[0]
+                    kv_dim = output_dim // 3
 
     num_layers = len(layers_set)
     if found_fused and not found_k_proj and kv_dim > 0:
