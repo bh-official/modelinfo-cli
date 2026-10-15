@@ -178,7 +178,12 @@ def analyze_model(
         )
         if not is_local_path:
             # Treat as remote only if it contains a slash and does not end with a model extension
-            if "/" in file_path and not file_path_lower.endswith((".safetensors", ".gguf", ".pt", ".bin", ".index.json")):
+            explicit_hub_gguf = (
+                len(file_path.split("/")) >= 3 and file_path_lower.endswith(".gguf")
+            )
+            if explicit_hub_gguf or (
+                "/" in file_path and not file_path_lower.endswith((".safetensors", ".gguf", ".pt", ".bin", ".index.json"))
+            ):
                 is_remote = True
 
     if is_remote:
