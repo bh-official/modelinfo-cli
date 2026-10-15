@@ -107,6 +107,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Target GPU hardware (e.g. 'RTX4090' or 'auto') to check if the model fits.",
     )
     parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print analysis as JSON instead of terminal tables.",
+    )
+    parser.add_argument(
         "--tensors",
         action="store_true",
         help="Deep dive: Fetch all remote tensor shards to display the exact tensor size breakdown.",
@@ -311,7 +316,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             models.append((model_path.split("/")[-1], info))
             
-        print_compare_info(models, gpu_vram_gb if gpu_vram_gb else args.max_vram, gpu_name=gpu_name_display)
+        if args.json:
+            print(json.dumps([{"name": name, "info": info} for name, info in models], indent=2))
+        else:
+            print_compare_info(models, gpu_vram_gb if gpu_vram_gb else args.max_vram, gpu_name=gpu_name_display)
         return 0
         
     file_path = args.file[0]
@@ -330,7 +338,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         gpu_util=args.gpu_util
     )
 
-    print_model_info(**info, max_vram_gb=gpu_vram_gb if gpu_vram_gb else args.max_vram, gpu_name=gpu_name_display)
+    if args.json:
+        print(json.dumps(info, indent=2))
+    else:
+        print_model_info(**info, max_vram_gb=gpu_vram_gb if gpu_vram_gb else args.max_vram, gpu_name=gpu_name_display)
     return 0
 
 

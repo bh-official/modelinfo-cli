@@ -145,6 +145,22 @@ Mistral-7B-v0.1    7.2B      BF16     8K         15.07 GB    ✗
 Qwen2.5-0.5B       494.0M    BF16     8K         1.6 GB      ✓
 ```
 
+## Machine-readable output
+
+Use `modelinfo model.gguf --json` to write the complete analysis dictionary to
+standard output without terminal tables or ANSI styling. For example:
+
+```bash
+modelinfo model.gguf --json > analysis.json
+modelinfo first.gguf second.gguf --json > comparison.json
+```
+
+A single model produces an object containing `footprint`, `tensors`, and the
+other analysis metadata. Multiple models produce an ordered array of objects
+with `name` (the displayed filename) and `info` (the analysis dictionary).
+`--json` also works with single-model `--vllm` analysis. It does not change the
+existing restriction on combining multi-model comparison with `--vllm`.
+
 ## Command Reference
 
 | Argument | Example | Description |
@@ -160,6 +176,7 @@ Qwen2.5-0.5B       494.0M    BF16     8K         1.6 GB      ✓
 | `--topology` | `--topology nvlink` | Set interconnect topology to calculate exact communication overhead penalties (`nvlink`, `pcie4`, `pcie3`). Defaults to `pcie4`. |
 | `--strategy` | `--strategy tp` | Selects the parallelization strategy for multi-GPU setups (`tp` for Tensor Parallelism, `pp` for Pipeline Parallelism). Defaults to `tp`. |
 | `--tensors` | `--tensors` | Bypasses the algorithmic speed estimation and forces the tool to fetch all remote shards, displaying an exact size breakdown of every tensor. |
+| `--json` | `--json` | Emit analysis metadata as JSON instead of terminal tables. |
 | `--timeout` | `--timeout 30` | Network timeout in seconds for remote Hugging Face fetches. Defaults to `10`. |
 | `-v, --version` | `modelinfo -v` | Show program's version number and exit. |
 
