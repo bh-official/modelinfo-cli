@@ -13,7 +13,7 @@ reviews:
         
         Please strictly enforce the following architectural constraints when reviewing:
         
-        1. Zero-Dependency Parsing: The project must parse binary headers (.safetensors, .gguf) directly using the Python standard library (os, struct, json, zipfile).
+        1. Standard-Library Parsing: The project must parse binary headers (.safetensors, .gguf) directly using the Python standard library (os, struct, json, zipfile).
         2. No Heavy Imports: Imports such as `torch`, `transformers`, `numpy`, `safetensors`, and `huggingface_hub` are completely banned from the project.
         3. Fast Startup Time: The CLI must execute in under 100ms. Any module that takes time to load must be lazy-imported inside the specific function where it is used.
         4. Sandboxed Pickling: For PyTorch (.pt) files, `pickle.load()` must not be used without a custom restricted `pickle.Unpickler` that blocks arbitrary code execution.
