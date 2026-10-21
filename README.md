@@ -12,7 +12,7 @@ It reads binary headers directly using the Python standard library. It skips the
 
 ## Features
 
-- **Zero-Dependency Parsing**: Reads `.safetensors` 8-byte JSON prefixes and `.gguf` binary key-value metadata directly via `struct` and `json` (falling back to `config.json` if needed).
+- **Standard-Library Parsing**: Reads `.safetensors` 8-byte JSON prefixes and `.gguf` binary key-value metadata directly via `struct` and `json` (falling back to `config.json` if needed).
 - **Remote Hugging Face Hub Inspection**: Pass a repo ID (e.g., `meta-llama/Llama-2-7b-hf`) and it uses concurrent byte-range requests to read the headers off the CDN in under 2 seconds. No need to download the checkpoint.
 - Parses `model.safetensors.index.json` to support sharded models without crashing on partial downloads.
 - **Dynamic VRAM & vLLM Capacity Planning**: Calculates exact VRAM limits based on the model's architecture and your target context length. If you use the `--vllm` flag, it switches to a "Serving Capacity" simulation that calculates exactly how many tokens fit in the PagedAttention pool based on your `--gpu-util` ratio.
@@ -24,7 +24,7 @@ It reads binary headers directly using the Python standard library. It skips the
 
 > [!NOTE]
 > **A Note on Performance & Remote Fetching**
-> Local `.gguf` and `.safetensors` files are parsed in under 100ms. However, querying remote Hugging Face repositories takes **1 to 10 seconds**. To remain zero-dependency, `modelinfo` opens connections via Python `urllib` instead of loading PyTorch. For massive sharded models (e.g., 100+ shards), it must fetch every header individually, capped at an 8-worker thread pool to prevent Cloudflare IP bans. Waiting ~8 seconds to map a model is faster than downloading 400GB just to see if it fits your hardware.
+> Local `.gguf` and `.safetensors` files are parsed in under 100ms. However, querying remote Hugging Face repositories takes **1 to 10 seconds**. To stay lightweight, `modelinfo` opens connections via Python `urllib` instead of loading PyTorch. For massive sharded models (e.g., 100+ shards), it must fetch every header individually, capped at an 8-worker thread pool to prevent Cloudflare IP bans. Waiting ~8 seconds to map a model is faster than downloading 400GB just to see if it fits your hardware.
 
 ## Installation
 
