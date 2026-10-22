@@ -148,7 +148,7 @@ class RemoteFileStream:
         self.url = url
         self.chunk_size = chunk_size
         self.timeout = timeout
-        self.buffer = b""
+        self.buffer = bytearray()
         self.position = 0
 
     def read(self, size: int = -1) -> bytes:
@@ -177,7 +177,7 @@ class RemoteFileStream:
                 )
                 if not chunk:
                     break
-                self.buffer += chunk
+                self.buffer.extend(chunk)
             except urllib.error.HTTPError as e:
                 if e.code == 416:
                     break
@@ -185,7 +185,7 @@ class RemoteFileStream:
             except Exception:
                 raise
                 
-        result = self.buffer[self.position:self.position+size]
+        result = bytes(self.buffer[self.position:self.position+size])
         self.position += len(result)
         return result
 
