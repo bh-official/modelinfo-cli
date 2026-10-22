@@ -90,7 +90,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "file",
         type=str,
         nargs="+",
-        help="Path to the model checkpoint file(s) or Hugging Face repository IDs.",
+        help="Path to a model checkpoint file, a local model directory, or a Hugging Face repository ID.",
     )
     parser.add_argument(
         "--context",
@@ -166,6 +166,91 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _list_weight_files(dir_path: str, suffix: str) -> list[str]:
+    """Return sorted basenames in dir_path that end with suffix (case-insensitive)."""
+    names = []
+    for name in os.listdir(dir_path):
+        full = os.path.join(dir_path, name)
+        if os.path.isfile(full) and name.lower().endswith(suffix):
+            names.append(name)
+    return sorted(names)
+
+
+def _pick_single(dir_path: str, suffix: str, label: str, hint: str = "") -> str | None:
+    """Return the only file with suffix in dir_path, None if absent; raise if ambiguous."""
+    files = _list_weight_files(dir_path, suffix)
+    if not files:
+        return None
+    if len(files) > 1:
+        listed = ", ".join(files)
+        raise ValueError(
+            f"Multiple {label} files found in '{dir_path}'{hint}. Please provide one of: {listed}"
+        )
+    return os.path.join(dir_path, files[0])
+
+
+def _local_gguf_group(dir_path: str, gguf_files: list[str]) -> dict:
+    """Build a GGUF_group payload for a local folder holding several .gguf files."""
+    variants = []
+    for name in gguf_files:
+        full = os.path.join(dir_path, name)
+        variants.append({"filename": name, "size": float(os.path.getsize(full))})
+    # Parse the smallest file for shared architecture metadata (same as remote).
+    header_target = min(variants, key=lambda v: v["size"])
+    tensors = parse_gguf_header(os.path.join(dir_path, header_target["filename"]))
+    tensors["__metadata__"] = tensors.get("__metadata__", {})
+    tensors["__metadata__"]["gguf_variants"] = variants
+    tensors["__metadata__"]["repo_id"] = dir_path
+    return {
+        "format_name": "GGUF_group",
+        "tensors": tensors,
+        "disk_size": 0.0,
+    }
+
+
+def _resolve_local_directory(dir_path: str) -> str | dict:
+    """
+    Pick a concrete weights path from a local model folder.
+
+    Priority matches issue #58:
+      1. model.safetensors.index.json
+      2. a single *.safetensors file
+      3. *.gguf (one file, or a GGUF_group payload when several)
+      4. pytorch_model.bin / a single *.pt
+
+    Returns either a file path string, or a dict with keys
+    ``format_name`` / ``tensors`` / ``disk_size`` for a local GGUF group.
+    """
+    index_name = "model.safetensors.index.json"
+    index_path = os.path.join(dir_path, index_name)
+    if os.path.isfile(index_path):
+        return index_path
+
+    found = _pick_single(dir_path, ".safetensors", ".safetensors", f" and no {index_name}")
+    if found:
+        return found
+
+    gguf_files = _list_weight_files(dir_path, ".gguf")
+    if len(gguf_files) == 1:
+        return os.path.join(dir_path, gguf_files[0])
+    if gguf_files:
+        return _local_gguf_group(dir_path, gguf_files)
+
+    pytorch_bin = os.path.join(dir_path, "pytorch_model.bin")
+    if os.path.isfile(pytorch_bin):
+        return pytorch_bin
+
+    found = _pick_single(dir_path, ".pt", ".pt")
+    if found:
+        return found
+
+    raise ValueError(
+        f"No supported weight files found in '{dir_path}'. "
+        "Expected model.safetensors.index.json, *.safetensors, *.gguf, "
+        "pytorch_model.bin, or *.pt."
+    )
+
+
 def analyze_model(
     file_path: str, 
     context_override: int | None, 
@@ -206,6 +291,26 @@ def analyze_model(
         tensors, config, format_name, disk_size = fetch_huggingface_repo(
             file_path, fetch_tensors=fetch_tensors, timeout=timeout
         )
+    elif os.path.isdir(file_path):
+        resolved = _resolve_local_directory(file_path)
+        if isinstance(resolved, dict):
+            tensors = resolved["tensors"]
+            format_name = resolved["format_name"]
+            disk_size = resolved["disk_size"]
+        else:
+            return analyze_model(
+                resolved,
+                context_override,
+                gpu_count=gpu_count,
+                batch_size=batch_size,
+                fetch_tensors=fetch_tensors,
+                timeout=timeout,
+                topology=topology,
+                strategy=strategy,
+                is_vllm=is_vllm,
+                gpu_vram_gb=gpu_vram_gb,
+                gpu_util=gpu_util,
+            )
     elif file_path_lower.endswith(".safetensors") or file_path_lower.endswith(".index.json"):
         tensors = parse_safetensors_header(file_path)
         format_name = "SafeTensors"
@@ -224,8 +329,6 @@ def analyze_model(
     elif file_path_lower.endswith(".pt") or file_path_lower.endswith(".bin"):
         tensors = parse_pytorch_header(file_path)
         format_name = "PyTorch"
-    elif os.path.isdir(file_path):
-        raise IsADirectoryError(f"'{file_path}' is a directory. Please provide the path to a specific weights file (e.g. .safetensors, .gguf, .pt) inside the directory.")
     else:
         raise ValueError(f"File '{file_path}' not found locally and does not appear to be a Hugging Face repository ID.")
         
