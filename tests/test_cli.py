@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 import modelinfo.cli as cli
@@ -375,3 +377,13 @@ def test_main_reports_errors_without_traceback(capsys):
     err = capsys.readouterr().err
     assert "Error:" in err and "missing.safetensors" in err
     assert "Traceback" not in err
+
+
+def test_cli_comparison_uses_file_name_for_windows_path(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "analyze_model", lambda *args, **kwargs: {})
+    monkeypatch.setattr(cli, "_json_report", lambda *args, **kwargs: {})
+
+    assert cli.main([r"C:\models\b.pt", "a.gguf", "--json"]) == 0
+
+    reports = json.loads(capsys.readouterr().out)
+    assert [report["name"] for report in reports] == ["b.pt", "a.gguf"]
