@@ -11,10 +11,23 @@ GGML_TYPE_MAP = {
     34: "TQ1_0", 35: "TQ2_0", 39: "MXFP4",
 }
 
+# Lengths come from the file, so a corrupt one must hit EOF instead of allocating it.
+_MAX_READ_CHUNK = 1024 * 1024
+
+# Fixed-size GGUF value types; 8 (string) and 9 (array) are handled separately.
+_SCALAR_FORMATS = {
+    0: "B", 1: "b", 2: "H", 3: "h", 4: "I", 5: "i", 6: "f", 7: "?",
+    10: "Q", 11: "q", 12: "d",
+}
+
+
 def _read_exact(f: Any, size: int) -> bytes:
-    data = bytearray()
+    chunk = f.read(min(size, _MAX_READ_CHUNK))
+    if len(chunk) == size:
+        return chunk
+    data = bytearray(chunk)
     while len(data) < size:
-        chunk = f.read(size - len(data))
+        chunk = f.read(min(size - len(data), _MAX_READ_CHUNK))
         if not chunk:
             raise EOFError("Unexpected end of GGUF header")
         data.extend(chunk)
@@ -22,37 +35,22 @@ def _read_exact(f: Any, size: int) -> bytes:
 
 
 def _read_gguf_value(f: Any, val_type: int) -> Any:
-    if val_type == 0:
-        return struct.unpack("<B", _read_exact(f, 1))[0]
-    elif val_type == 1:
-        return struct.unpack("<b", _read_exact(f, 1))[0]
-    elif val_type == 2:
-        return struct.unpack("<H", _read_exact(f, 2))[0]
-    elif val_type == 3:
-        return struct.unpack("<h", _read_exact(f, 2))[0]
-    elif val_type == 4:
-        return struct.unpack("<I", _read_exact(f, 4))[0]
-    elif val_type == 5:
-        return struct.unpack("<i", _read_exact(f, 4))[0]
-    elif val_type == 6:
-        return struct.unpack("<f", _read_exact(f, 4))[0]
-    elif val_type == 7:
-        return struct.unpack("<?", _read_exact(f, 1))[0]
-    elif val_type == 8:
+    fmt = _SCALAR_FORMATS.get(val_type)
+    if fmt is not None:
+        return struct.unpack("<" + fmt, _read_exact(f, struct.calcsize(fmt)))[0]
+    if val_type == 8:
         slen = struct.unpack("<Q", _read_exact(f, 8))[0]
         return _read_exact(f, slen).decode("utf-8")
-    elif val_type == 9:
+    if val_type == 9:
         arr_type = struct.unpack("<I", _read_exact(f, 4))[0]
         arr_len = struct.unpack("<Q", _read_exact(f, 8))[0]
+        fmt = _SCALAR_FORMATS.get(arr_type)
+        if fmt is not None:
+            # Tokenizer scores and token types are 100k+ numbers; unpack them in one call.
+            raw = _read_exact(f, arr_len * struct.calcsize(fmt))
+            return list(struct.unpack(f"<{arr_len}{fmt}", raw))
         return [_read_gguf_value(f, arr_type) for _ in range(arr_len)]
-    elif val_type == 10:
-        return struct.unpack("<Q", _read_exact(f, 8))[0]
-    elif val_type == 11:
-        return struct.unpack("<q", _read_exact(f, 8))[0]
-    elif val_type == 12:
-        return struct.unpack("<d", _read_exact(f, 8))[0]
-    else:
-        raise ValueError(f"Unknown GGUF value type: {val_type}")
+    raise ValueError(f"Unknown GGUF value type: {val_type}")
 
 
 def parse_gguf_header(path_or_file: str | Any) -> Dict[str, Any]:

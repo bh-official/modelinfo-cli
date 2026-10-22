@@ -14,8 +14,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ### Changed
 - Remote `owner/repo/file.gguf` paths that do not exist locally are now fetched from the Hugging Face Hub, as documented in the README (#50).
 - The cached Hugging Face token is read from `HF_TOKEN_PATH`, `HF_HOME` or `XDG_CACHE_HOME` when set (#46).
+- GGUF headers parse about twice as fast: numeric metadata arrays such as tokenizer scores and token types are unpacked in one call.
 
 ### Fixed
+- Missing files, gated repositories, network failures and corrupt headers now print a one-line `Error:` message and exit with status 1 instead of a Python traceback.
+- Fixed a `MemoryError` on GGUF files with a corrupt string or array length; they now fail with "Unexpected end of GGUF header".
 - Fixed PyTorch `.pt`/`.bin` parsing failing on every real `torch.save` checkpoint, and added support for double, short, char, byte and bool storage and wrapped `state_dict` checkpoints (#45).
 - Fixed AMD auto-detection never matching real `rocm-smi` output, Intel Macs being reported as Apple Silicon, and lenient Intel `xpu-smi` memory parsing (#51).
 - Fixed GGUF quantized memory estimates to match the GGML block sizes (e.g. Q4_K was overestimated by ~5.6%) and counted scalar tensors (#52).

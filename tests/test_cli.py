@@ -368,3 +368,10 @@ def test_cli_strips_trailing_slashes_from_model_paths(monkeypatch):
     # Test multiple model paths with trailing slashes (side-by-side comparison)
     cli.main(["meta-llama/Llama-2-7b-hf/", "mistralai/Mistral-7B-v0.1/"])
     assert captured_paths == ["meta-llama/Llama-2-7b-hf", "mistralai/Mistral-7B-v0.1"]
+
+
+def test_main_reports_errors_without_traceback(capsys):
+    assert cli.main(["./missing.safetensors"]) == 1
+    err = capsys.readouterr().err
+    assert "Error:" in err and "missing.safetensors" in err
+    assert "Traceback" not in err
